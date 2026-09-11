@@ -1,0 +1,11 @@
+{
+  "name": "coinstsorbit",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "pages:dev": "wrangler pages dev public --compatibility-date=2024-11-01"
+  },
+  "devDependencies": {
+    "wrangler": "^4.14.0"
+  }
+}
