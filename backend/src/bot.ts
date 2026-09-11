@@ -46,6 +46,20 @@ function mainMenuKeyboard() {
   ]);
 }
 
+/** Usuario o correo. Acepta `tsorbit` (sin @) o `mail@x.com`. */
+function normalizeUser(raw: string): string | null {
+  let v = raw.trim().toLowerCase().replace(/^@+/, '');
+  if (v.includes(':') || v.includes(' ')) return null;
+  if (v.length < 2 || v.length > 64) return null;
+  // usuario simple o correo con @
+  if (v.includes('@')) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return null;
+  } else if (!/^[a-z0-9._-]+$/i.test(v)) {
+    return null;
+  }
+  return v;
+}
+
 function nuevoPanelText(d: Draft): string {
   const mail = d.email
     ? `✅ \`${d.email}\``
@@ -54,16 +68,17 @@ function nuevoPanelText(d: Draft): string {
   return [
     '🆕 *Nueva cuenta*',
     '━━━━━━━━━━━━━━━━',
-    `📧 *Correo:* ${mail}`,
+    `👤 *Usuario:* ${mail}`,
     `🔑 *Contraseña:* ${pass}`,
     '',
+    'Puedes usar solo el nombre (`tsorbit`) sin @.',
     'Toca un botón de esta sección para rellenar.',
     'Al completar ambos, pulsa *Activar*.',
   ].join('\n');
 }
 
 function nuevoPanelKeyboard(d: Draft) {
-  const mailBtn = d.email ? '📧 Correo ✅' : '📧 Correo ⏳';
+  const mailBtn = d.email ? '👤 Usuario ✅' : '👤 Usuario ⏳';
   const passBtn = d.password ? '🔑 Contraseña ✅' : '🔑 Contraseña ⏳';
   const rows = [
     [
@@ -222,27 +237,29 @@ export function startTelegramBot(token: string) {
       [
         '❓ *Ayuda*',
         '',
-        '🆕 Nuevo — panel correo + contraseña con ✅',
+        '🆕 Nuevo — panel usuario + contraseña con ✅',
         '📋 Cuentas — listado',
         '⛔ Desactivar — apaga una cuenta',
         '',
-        'Atajo: `correo:contraseña`',
+        'Usuario sin @: `tsorbit`',
+        'Atajo: `tsorbit:clave123`',
       ].join('\n'),
       { parse_mode: 'Markdown', ...mainMenuKeyboard() },
     );
   });
 
   bot.action('nuevo:email', async (ctx) => {
-    await ctx.answerCbQuery('📧 Correo');
+    await ctx.answerCbQuery('👤 Usuario');
     const d = getDraft(ctx.from!.id);
     d.awaiting = 'email';
     if (ctx.callbackQuery.message && 'message_id' in ctx.callbackQuery.message) {
       d.panelChatId = ctx.chat!.id;
       d.panelMessageId = ctx.callbackQuery.message.message_id;
     }
-    await ctx.reply('✍️ Envía ahora el *correo*:', {
-      parse_mode: 'Markdown',
-    });
+    await ctx.reply(
+      '✍️ Envía el *usuario* o correo:\nEjemplo: `tsorbit` (sin @)',
+      { parse_mode: 'Markdown' },
+    );
   });
 
   bot.action('nuevo:password', async (ctx) => {
@@ -277,7 +294,7 @@ export function startTelegramBot(token: string) {
     const uid = ctx.from!.id;
     const d = getDraft(uid);
     if (!d.email || !d.password) {
-      await ctx.answerCbQuery('Falta correo o contraseña', { show_alert: true });
+      await ctx.answerCbQuery('Falta usuario o contraseña', { show_alert: true });
       return;
     }
     await ctx.answerCbQuery('Activando…');
@@ -331,14 +348,17 @@ export function startTelegramBot(token: string) {
     const d = getDraft(uid);
 
     if (d.awaiting === 'email') {
-      const email = text.toLowerCase();
-      if (!email.includes('@') || email.length < 5) {
-        await ctx.reply('⚠️ Correo inválido. Intenta de nuevo.');
+      const email = normalizeUser(text);
+      if (!email) {
+        await ctx.reply(
+          '⚠️ Usuario inválido. Usa `tsorbit` o un correo.',
+          { parse_mode: 'Markdown' },
+        );
         return;
       }
       d.email = email;
       d.awaiting = d.password ? null : 'password';
-      await ctx.reply(`✅ Correo marcado: \`${email}\``, {
+      await ctx.reply(`✅ Usuario marcado: \`${email}\``, {
         parse_mode: 'Markdown',
       });
       await refreshNuevoPanel(ctx, uid);
@@ -380,11 +400,15 @@ export function startTelegramBot(token: string) {
       return;
     }
 
-    // atajo legacy correo:contraseña
+    // atajo: usuario:contraseña (sin @ obligatorio)
     const m = text.match(/^([^\s:]+)\s*[:|]\s*(.+)$/);
     if (m) {
-      const email = m[1].trim().toLowerCase();
+      const email = normalizeUser(m[1]);
       const password = m[2].trim();
+      if (!email) {
+        await ctx.reply('⚠️ Usuario inválido.');
+        return;
+      }
       if (password.length < 3) {
         await ctx.reply('⚠️ Contraseña muy corta.');
         return;
