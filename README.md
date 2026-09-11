@@ -1,24 +1,23 @@
 # TsOrbit — bridge Cloudflare Pages + backend VPS
 
 ## App
-La app solo usa: `https://coinstsorbit.pages.dev`
+La app solo usa: `https://coinstsorbit.pages.dev` (nunca la IP del VPS).
 
 ## Cloudflare Pages (puente)
-1. Conectar este repo a Cloudflare Pages (output: `public`).
-2. Variables de entorno (Production):
-   - `ORIGIN` = `http://127.0.0.1:8787` vía tunnel, o la URL interna del backend
-   - `BRIDGE_SECRET` = mismo valor que en el `.env` del backend
-3. Dominio: `coinstsorbit.pages.dev`
+1. Secrets de GitHub Actions: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+2. En el proyecto Pages `coinstsorbit`, variables de entorno (Production):
+   - `ORIGIN` = URL interna del backend (solo en Cloudflare)
+   - `BRIDGE_SECRET` = mismo valor que en el `.env` del VPS
+3. Build output: `public` · Functions: `functions/`
 
 ## Backend (VPS)
 ```bash
-cd backend
-cp .env.example .env   # completar tokens
-npm install
-npm start
+cd /opt/tsorbit-backend
+# .env con TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_ID, BRIDGE_SECRET
+systemctl restart tsorbit-backend
 ```
 
-Systemd: servicio `tsorbit-backend` (escucha solo con `BRIDGE_SECRET`).
+La API exige header `X-Bridge-Secret`. Sin él → 403 (aunque alguien sepa la IP).
 
-## Telegram
-Solo admin `TELEGRAM_ADMIN_ID` puede gestionar cuentas: `correo:contraseña`
+## Telegram (solo admin)
+`correo:contraseña` · `/list` · `/off correo`
