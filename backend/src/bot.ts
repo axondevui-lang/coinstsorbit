@@ -1,4 +1,4 @@
-import { Telegraf } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 import bcrypt from 'bcryptjs';
 import {
   deactivateUser,
@@ -7,24 +7,106 @@ import {
   upsertActiveUser,
 } from './db.js';
 
-const EMAIL_PASS = /^([^\s:]+)\s*[:|]\s*(.+)$/;
+type AwaitField = 'email' | 'password' | 'off_email' | null;
 
-function parseCred(text: string): { email: string; password: string } | null {
-  const line = text.trim();
-  const m = line.match(EMAIL_PASS);
-  if (!m) return null;
-  return { email: m[1].trim().toLowerCase(), password: m[2].trim() };
-}
+type Draft = {
+  email?: string;
+  password?: string;
+  panelChatId?: number;
+  panelMessageId?: number;
+  awaiting: AwaitField;
+};
+
+const drafts = new Map<number, Draft>();
 
 function isAdmin(userId: number | undefined): boolean {
   const adminId = Number(process.env.TELEGRAM_ADMIN_ID || 0);
   return !!adminId && userId === adminId;
 }
 
+function getDraft(uid: number): Draft {
+  let d = drafts.get(uid);
+  if (!d) {
+    d = { awaiting: null };
+    drafts.set(uid, d);
+  }
+  return d;
+}
+
+function mainMenuKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('🆕 Nuevo', 'menu:nuevo'),
+      Markup.button.callback('📋 Cuentas', 'menu:list'),
+    ],
+    [
+      Markup.button.callback('⛔ Desactivar', 'menu:off'),
+      Markup.button.callback('❓ Ayuda', 'menu:help'),
+    ],
+  ]);
+}
+
+function nuevoPanelText(d: Draft): string {
+  const mail = d.email
+    ? `✅ \`${d.email}\``
+    : '⏳ pendiente';
+  const pass = d.password ? '✅ `••••••••`' : '⏳ pendiente';
+  return [
+    '🆕 *Nueva cuenta*',
+    '━━━━━━━━━━━━━━━━',
+    `📧 *Correo:* ${mail}`,
+    `🔑 *Contraseña:* ${pass}`,
+    '',
+    'Toca un botón de esta sección para rellenar.',
+    'Al completar ambos, pulsa *Activar*.',
+  ].join('\n');
+}
+
+function nuevoPanelKeyboard(d: Draft) {
+  const mailBtn = d.email ? '📧 Correo ✅' : '📧 Correo ⏳';
+  const passBtn = d.password ? '🔑 Contraseña ✅' : '🔑 Contraseña ⏳';
+  const rows = [
+    [
+      Markup.button.callback(mailBtn, 'nuevo:email'),
+      Markup.button.callback(passBtn, 'nuevo:password'),
+    ],
+  ];
+  if (d.email && d.password) {
+    rows.push([Markup.button.callback('🚀 Activar cuenta', 'nuevo:activar')]);
+  }
+  rows.push([
+    Markup.button.callback('🧹 Limpiar', 'nuevo:clear'),
+    Markup.button.callback('⬅️ Menú', 'menu:home'),
+  ]);
+  return Markup.inlineKeyboard(rows);
+}
+
+async function refreshNuevoPanel(ctx: any, uid: number) {
+  const d = getDraft(uid);
+  const text = nuevoPanelText(d);
+  const kb = nuevoPanelKeyboard(d);
+  if (d.panelChatId && d.panelMessageId) {
+    try {
+      await ctx.telegram.editMessageText(
+        d.panelChatId,
+        d.panelMessageId,
+        undefined,
+        text,
+        { parse_mode: 'Markdown', ...kb },
+      );
+      return;
+    } catch {
+      /* message may be identical or gone */
+    }
+  }
+  const sent = await ctx.reply(text, { parse_mode: 'Markdown', ...kb });
+  d.panelChatId = sent.chat.id;
+  d.panelMessageId = sent.message_id;
+}
+
 export function startTelegramBot(token: string) {
   const bot = new Telegraf(token);
 
-  // Solo el admin puede usar el bot. Cualquier otro usuario se ignora.
   bot.use(async (ctx, next) => {
     const uid = ctx.from?.id;
     if (!isAdmin(uid)) {
@@ -35,79 +117,296 @@ export function startTelegramBot(token: string) {
   });
 
   bot.start(async (ctx) => {
+    drafts.set(ctx.from!.id, { awaiting: null });
     await ctx.reply(
       [
-        'TsOrbit Admin',
+        '🛰️ *TsOrbit Admin*',
         '',
-        'Activar cuenta (rápido):',
-        'correo:contraseña',
-        '',
-        'Ejemplo:',
-        'demo@tsorbit.com:clave123',
-        '',
-        'Comandos:',
-        '/list — ver cuentas',
-        '/off correo — desactivar',
-        '/help — ayuda',
+        'Panel rápido con callbacks.',
+        'Elige una opción:',
       ].join('\n'),
+      { parse_mode: 'Markdown', ...mainMenuKeyboard() },
     );
   });
 
   bot.help(async (ctx) => {
     await ctx.reply(
-      'Envía correo:contraseña para crear/activar.\n/list\n/off correo',
+      [
+        '❓ *Ayuda*',
+        '',
+        '🆕 Nuevo — crear/activar con correo + contraseña',
+        '📋 Cuentas — listar',
+        '⛔ Desactivar — apagar una cuenta',
+        '',
+        'Atajo texto: `correo:contraseña`',
+      ].join('\n'),
+      { parse_mode: 'Markdown', ...mainMenuKeyboard() },
+    );
+  });
+
+  bot.action('menu:home', async (ctx) => {
+    await ctx.answerCbQuery();
+    drafts.set(ctx.from!.id, { awaiting: null });
+    await ctx.editMessageText(
+      [
+        '🛰️ *TsOrbit Admin*',
+        '',
+        'Panel rápido con callbacks.',
+        'Elige una opción:',
+      ].join('\n'),
+      { parse_mode: 'Markdown', ...mainMenuKeyboard() },
+    );
+  });
+
+  bot.action('menu:nuevo', async (ctx) => {
+    await ctx.answerCbQuery('🆕 Nueva cuenta');
+    const uid = ctx.from!.id;
+    const d: Draft = { awaiting: null };
+    drafts.set(uid, d);
+    const text = nuevoPanelText(d);
+    const kb = nuevoPanelKeyboard(d);
+    await ctx.editMessageText(text, { parse_mode: 'Markdown', ...kb });
+    d.panelChatId = ctx.chat!.id;
+    d.panelMessageId = ctx.callbackQuery.message
+      ? 'message_id' in ctx.callbackQuery.message
+        ? ctx.callbackQuery.message.message_id
+        : undefined
+      : undefined;
+  });
+
+  bot.action('menu:list', async (ctx) => {
+    await ctx.answerCbQuery();
+    const users = listUsers();
+    const body = users.length
+      ? users
+          .map(
+            (u) =>
+              `${u.active ? '🟢' : '🔴'} *#${u.id}* \`${u.email}\``,
+          )
+          .join('\n')
+      : '_No hay cuentas todavía._';
+    await ctx.editMessageText(
+      ['📋 *Cuentas*', '━━━━━━━━━━━━━━━━', body].join('\n'),
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔄 Actualizar', 'menu:list')],
+          [Markup.button.callback('⬅️ Menú', 'menu:home')],
+        ]),
+      },
+    );
+  });
+
+  bot.action('menu:off', async (ctx) => {
+    await ctx.answerCbQuery();
+    const d = getDraft(ctx.from!.id);
+    d.awaiting = 'off_email';
+    await ctx.editMessageText(
+      [
+        '⛔ *Desactivar cuenta*',
+        '',
+        '✍️ Envía el *correo* a desactivar.',
+      ].join('\n'),
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('⬅️ Menú', 'menu:home')],
+        ]),
+      },
+    );
+  });
+
+  bot.action('menu:help', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(
+      [
+        '❓ *Ayuda*',
+        '',
+        '🆕 Nuevo — panel correo + contraseña con ✅',
+        '📋 Cuentas — listado',
+        '⛔ Desactivar — apaga una cuenta',
+        '',
+        'Atajo: `correo:contraseña`',
+      ].join('\n'),
+      { parse_mode: 'Markdown', ...mainMenuKeyboard() },
+    );
+  });
+
+  bot.action('nuevo:email', async (ctx) => {
+    await ctx.answerCbQuery('📧 Correo');
+    const d = getDraft(ctx.from!.id);
+    d.awaiting = 'email';
+    if (ctx.callbackQuery.message && 'message_id' in ctx.callbackQuery.message) {
+      d.panelChatId = ctx.chat!.id;
+      d.panelMessageId = ctx.callbackQuery.message.message_id;
+    }
+    await ctx.reply('✍️ Envía ahora el *correo*:', {
+      parse_mode: 'Markdown',
+    });
+  });
+
+  bot.action('nuevo:password', async (ctx) => {
+    await ctx.answerCbQuery('🔑 Contraseña');
+    const d = getDraft(ctx.from!.id);
+    d.awaiting = 'password';
+    if (ctx.callbackQuery.message && 'message_id' in ctx.callbackQuery.message) {
+      d.panelChatId = ctx.chat!.id;
+      d.panelMessageId = ctx.callbackQuery.message.message_id;
+    }
+    await ctx.reply('✍️ Envía ahora la *contraseña*:', {
+      parse_mode: 'Markdown',
+    });
+  });
+
+  bot.action('nuevo:clear', async (ctx) => {
+    await ctx.answerCbQuery('Limpiado');
+    const uid = ctx.from!.id;
+    const d: Draft = { awaiting: null };
+    if (ctx.callbackQuery.message && 'message_id' in ctx.callbackQuery.message) {
+      d.panelChatId = ctx.chat!.id;
+      d.panelMessageId = ctx.callbackQuery.message.message_id;
+    }
+    drafts.set(uid, d);
+    await ctx.editMessageText(nuevoPanelText(d), {
+      parse_mode: 'Markdown',
+      ...nuevoPanelKeyboard(d),
+    });
+  });
+
+  bot.action('nuevo:activar', async (ctx) => {
+    const uid = ctx.from!.id;
+    const d = getDraft(uid);
+    if (!d.email || !d.password) {
+      await ctx.answerCbQuery('Falta correo o contraseña', { show_alert: true });
+      return;
+    }
+    await ctx.answerCbQuery('Activando…');
+    const existed = !!findUserByEmail(d.email);
+    const hash = await bcrypt.hash(d.password, 10);
+    const user = upsertActiveUser(d.email, hash);
+    drafts.set(uid, { awaiting: null });
+    await ctx.editMessageText(
+      [
+        '✅ *Cuenta lista*',
+        '━━━━━━━━━━━━━━━━',
+        `📧 \`${user.email}\``,
+        `🆔 #${user.id}`,
+        `📌 ${existed ? 'Actualizada' : 'Nueva'} · ACTIVA`,
+      ].join('\n'),
+      { parse_mode: 'Markdown', ...mainMenuKeyboard() },
     );
   });
 
   bot.command('list', async (ctx) => {
     const users = listUsers();
     if (!users.length) {
-      await ctx.reply('No hay cuentas todavía.');
+      await ctx.reply('📭 No hay cuentas todavía.', mainMenuKeyboard());
       return;
     }
     const lines = users.map(
-      (u) =>
-        `#${u.id} ${u.email} — ${u.active ? 'ACTIVA' : 'OFF'} — ${u.updated_at}`,
+      (u) => `${u.active ? '🟢' : '🔴'} #${u.id} ${u.email}`,
     );
-    await ctx.reply(lines.join('\n'));
+    await ctx.reply(['📋 Cuentas', ...lines].join('\n'), mainMenuKeyboard());
   });
 
   bot.command('off', async (ctx) => {
     const email = ctx.message.text.replace(/^\/off(@\w+)?\s*/i, '').trim();
     if (!email) {
-      await ctx.reply('Uso: /off correo');
+      getDraft(ctx.from.id).awaiting = 'off_email';
+      await ctx.reply('✍️ Envía el correo a desactivar.');
       return;
     }
     const ok = deactivateUser(email);
-    await ctx.reply(ok ? `Desactivada: ${email}` : `No existe: ${email}`);
+    await ctx.reply(
+      ok ? `⛔ Desactivada: ${email}` : `❓ No existe: ${email}`,
+      mainMenuKeyboard(),
+    );
   });
 
   bot.on('text', async (ctx) => {
-    const text = ctx.message.text;
+    const text = ctx.message.text.trim();
     if (text.startsWith('/')) return;
 
-    const parsed = parseCred(text);
-    if (!parsed) {
-      await ctx.reply('Formato: correo:contraseña');
-      return;
-    }
-    if (parsed.password.length < 3) {
-      await ctx.reply('Contraseña muy corta.');
+    const uid = ctx.from.id;
+    const d = getDraft(uid);
+
+    if (d.awaiting === 'email') {
+      const email = text.toLowerCase();
+      if (!email.includes('@') || email.length < 5) {
+        await ctx.reply('⚠️ Correo inválido. Intenta de nuevo.');
+        return;
+      }
+      d.email = email;
+      d.awaiting = d.password ? null : 'password';
+      await ctx.reply(`✅ Correo marcado: \`${email}\``, {
+        parse_mode: 'Markdown',
+      });
+      await refreshNuevoPanel(ctx, uid);
+      if (!d.password) {
+        await ctx.reply('👉 Ahora toca *🔑 Contraseña* o envíala aquí.', {
+          parse_mode: 'Markdown',
+        });
+      }
       return;
     }
 
-    const existed = !!findUserByEmail(parsed.email);
-    const hash = await bcrypt.hash(parsed.password, 10);
-    const user = upsertActiveUser(parsed.email, hash);
+    if (d.awaiting === 'password') {
+      if (text.length < 3) {
+        await ctx.reply('⚠️ Contraseña muy corta.');
+        return;
+      }
+      d.password = text;
+      d.awaiting = null;
+      await ctx.reply('✅ Contraseña marcada.');
+      await refreshNuevoPanel(ctx, uid);
+      if (d.email && d.password) {
+        await ctx.reply('🚀 Ambos listos. Pulsa *Activar cuenta*.', {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🚀 Activar cuenta', 'nuevo:activar')],
+          ]),
+        });
+      }
+      return;
+    }
+
+    if (d.awaiting === 'off_email') {
+      d.awaiting = null;
+      const ok = deactivateUser(text);
+      await ctx.reply(
+        ok ? `⛔ Desactivada: ${text}` : `❓ No existe: ${text}`,
+        mainMenuKeyboard(),
+      );
+      return;
+    }
+
+    // atajo legacy correo:contraseña
+    const m = text.match(/^([^\s:]+)\s*[:|]\s*(.+)$/);
+    if (m) {
+      const email = m[1].trim().toLowerCase();
+      const password = m[2].trim();
+      if (password.length < 3) {
+        await ctx.reply('⚠️ Contraseña muy corta.');
+        return;
+      }
+      const existed = !!findUserByEmail(email);
+      const hash = await bcrypt.hash(password, 10);
+      const user = upsertActiveUser(email, hash);
+      await ctx.reply(
+        [
+          '✅ Cuenta lista',
+          `📧 ${user.email}`,
+          `🆔 #${user.id}`,
+          existed ? 'Actualizada' : 'Nueva',
+        ].join('\n'),
+        mainMenuKeyboard(),
+      );
+      return;
+    }
 
     await ctx.reply(
-      [
-        '✅ Cuenta lista',
-        `Email: ${user.email}`,
-        'Estado: ACTIVA',
-        `Id: ${user.id}`,
-        existed ? '(actualizada)' : '(nueva)',
-      ].join('\n'),
+      'Usa el menú o el atajo `correo:contraseña`.',
+      { parse_mode: 'Markdown', ...mainMenuKeyboard() },
     );
   });
 
