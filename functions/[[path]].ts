@@ -8,7 +8,7 @@ interface Env {
   API_TOKEN?: string;
 }
 
-const DEFAULT_ORIGIN = 'http://169.58.253.64:8787';
+const DEFAULT_ORIGIN = 'https://hands-archived-within-susan.trycloudflare.com';
 const DEFAULT_TOKEN = 'uUR755Pf3Ph1AAReT40dKw9529nYH6mVVOCgBRjU_po';
 
 function corsHeaders(req: Request): Headers {
