@@ -1,15 +1,16 @@
 /**
  * Cloudflare Pages bridge — app only talks to coinstsorbit.pages.dev.
- * Prefer Pages env vars; fallbacks keep production working if unset.
+ * VPS IP lives ONLY in Cloudflare Pages env `ORIGIN` (never in the app).
+ *
+ * Required Pages env (Production):
+ *   ORIGIN=http://<VPS_IP>:8080
+ *   BRIDGE_SECRET=<same as VPS API_TOKEN / BRIDGE_SECRET>
  */
 interface Env {
   ORIGIN?: string;
   BRIDGE_SECRET?: string;
   API_TOKEN?: string;
 }
-
-const DEFAULT_ORIGIN = 'https://hands-archived-within-susan.trycloudflare.com';
-const DEFAULT_TOKEN = 'uUR755Pf3Ph1AAReT40dKw9529nYH6mVVOCgBRjU_po';
 
 function corsHeaders(req: Request): Headers {
   const h = new Headers();
@@ -24,6 +25,21 @@ function corsHeaders(req: Request): Headers {
   return h;
 }
 
+function jsonError(
+  req: Request,
+  status: number,
+  error: string,
+  detail?: string,
+): Response {
+  return new Response(JSON.stringify({ ok: false, error, detail }), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...Object.fromEntries(corsHeaders(req)),
+    },
+  });
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env, params } = context;
 
@@ -31,8 +47,23 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   }
 
-  const origin = (env.ORIGIN || DEFAULT_ORIGIN).replace(/\/$/, '');
-  const token = env.BRIDGE_SECRET || env.API_TOKEN || DEFAULT_TOKEN;
+  const origin = (env.ORIGIN || '').trim().replace(/\/$/, '');
+  const token = (env.BRIDGE_SECRET || env.API_TOKEN || '').trim();
+
+  if (!origin) {
+    return jsonError(
+      request,
+      500,
+      'ORIGIN no configurado en Cloudflare Pages',
+    );
+  }
+  if (!token) {
+    return jsonError(
+      request,
+      500,
+      'BRIDGE_SECRET no configurado en Cloudflare Pages',
+    );
+  }
 
   const parts = params.path;
   const path = Array.isArray(parts)
@@ -64,20 +95,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   try {
     upstream = await fetch(target, init);
   } catch (err) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: 'Origen no disponible',
-        detail: String(err),
-      }),
-      {
-        status: 502,
-        headers: {
-          'Content-Type': 'application/json',
-          ...Object.fromEntries(corsHeaders(request)),
-        },
-      },
-    );
+    return jsonError(request, 502, 'Origen no disponible', String(err));
   }
 
   const out = new Headers(upstream.headers);
