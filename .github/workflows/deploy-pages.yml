@@ -58,7 +58,7 @@ jobs:
           PY
           )
           RESP=$(curl -sS -X PATCH \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/coinstsorbit" \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/tsorbittikitoko" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -H "Content-Type: application/json" \
             --data "$BODY")
@@ -69,4 +69,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=coinstsorbit --branch=main
+          command: pages deploy public --project-name=tsorbittikitoko --branch=main
