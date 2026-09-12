@@ -1,12 +1,12 @@
 /**
- * Cloudflare Pages bridge — app only talks to coinstsorbit.pages.dev.
+ * Cloudflare Pages API bridge for https://tsorbittikitoko.pages.dev
  *
- * Prefer Cloudflare Pages env (set by GitHub Actions from secrets):
+ * Static frontend is served by Pages (see public/ + _routes.json).
+ * Only /health and /auth/* hit this function.
+ *
+ * Optional Pages env (not required — fallbacks below keep it alive):
  *   ORIGIN=http://<VPS_IP>:8880
  *   BRIDGE_SECRET=<same as VPS>
- *
- * Fallbacks keep production alive if env sync fails.
- * The mobile app never sees the VPS IP.
  */
 interface Env {
   ORIGIN?: string;
@@ -14,7 +14,7 @@ interface Env {
   API_TOKEN?: string;
 }
 
-/** Cloudflare Workers can reach this port; 8787 is blocked by CF outbound. */
+/** Port 8880 is on the Cloudflare Workers outbound allowlist. */
 const FALLBACK_ORIGIN = 'http://169.58.253.64:8880';
 const FALLBACK_TOKEN = 'uUR755Pf3Ph1AAReT40dKw9529nYH6mVVOCgBRjU_po';
 

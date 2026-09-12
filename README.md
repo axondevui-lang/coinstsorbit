@@ -1,39 +1,24 @@
-# TsOrbit — bridge Cloudflare Pages + backend VPS
+# TsOrbit bridge — https://tsorbittikitoko.pages.dev
 
-## App
-La app **solo** usa: `https://coinstsorbit.pages.dev`  
-Nunca hardcodea la IP del VPS.
+Repo **público**. Cloudflare Pages lee este GitHub y despliega solo.
 
-## Flujo
-```
-App (cualquier red IPv4/IPv6)
-  → https://coinstsorbit.pages.dev   (puente Cloudflare)
-    → ORIGIN (IP VPS, solo en env de Cloudflare Pages)
-      → backend con token BRIDGE_SECRET
-```
+## Qué hay aquí
+- `public/index.html` — pantalla “Server running” (terror)
+- `public/_routes.json` — el HTML no pasa por la Function
+- `functions/[[path]].ts` — puente API (`/health`, `/auth/*`) → VPS `:8880`
 
-## GitHub → Cloudflare
-Secrets del repo (`Settings → Secrets → Actions`):
+La app móvil solo usa `https://tsorbittikitoko.pages.dev` (nunca la IP).
 
-| Secret | Ejemplo | Uso |
-|--------|---------|-----|
-| `CLOUDFLARE_API_TOKEN` | token CF | Deploy Pages |
-| `CLOUDFLARE_ACCOUNT_ID` | account id | Deploy Pages |
-| `VPS_ORIGIN` | `http://x.x.x.x:8880` | IP del VPS (solo Cloudflare) |
-| `BRIDGE_SECRET` | mismo que VPS `.env` | Auth puente → backend |
+## Cloudflare Pages
+1. Workers & Pages → Create / Connect to Git  
+2. Repo: `axondevui-lang/coinstsorbit`  
+3. Project name: `tsorbittikitoko`  
+4. Build: output `public` (o framework = None)  
+5. Deploy
 
-Al hacer push a `main`, el workflow:
-1. Sincroniza `ORIGIN` + `BRIDGE_SECRET` en el proyecto Pages
-2. Despliega `public/` + `functions/`
+Variables de entorno son **opcionales** (el bridge ya trae fallback). Si quieres:
+- `ORIGIN` = `http://TU_IP_VPS:8880`
+- `BRIDGE_SECRET` = mismo del `.env` del VPS
 
-Puerto del backend: **8880** (permitido por Cloudflare Workers; `8787` no lo es).
-
-## Backend (VPS)
-```bash
-cd /opt/tsorbit-backend
-# .env: TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_ID, BRIDGE_SECRET, PORT=8880, HOST=0.0.0.0
-systemctl restart tsorbit-backend
-ufw allow 8880/tcp
-```
-
-Sin `Authorization: Bearer <BRIDGE_SECRET>` (o `X-Api-Token`) → 401.
+## Backend VPS
+`PORT=8880` · `HOST=0.0.0.0` · token obligatorio · `ufw allow 8880/tcp`
