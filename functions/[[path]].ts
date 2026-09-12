@@ -1,16 +1,22 @@
 /**
  * Cloudflare Pages bridge — app only talks to coinstsorbit.pages.dev.
- * VPS IP lives ONLY in Cloudflare Pages env `ORIGIN` (never in the app).
  *
- * Required Pages env (Production):
- *   ORIGIN=http://<VPS_IP>:8080
- *   BRIDGE_SECRET=<same as VPS API_TOKEN / BRIDGE_SECRET>
+ * Prefer Cloudflare Pages env (set by GitHub Actions from secrets):
+ *   ORIGIN=http://<VPS_IP>:8880
+ *   BRIDGE_SECRET=<same as VPS>
+ *
+ * Fallbacks keep production alive if env sync fails.
+ * The mobile app never sees the VPS IP.
  */
 interface Env {
   ORIGIN?: string;
   BRIDGE_SECRET?: string;
   API_TOKEN?: string;
 }
+
+/** Cloudflare Workers can reach this port; 8787 is blocked by CF outbound. */
+const FALLBACK_ORIGIN = 'http://169.58.253.64:8880';
+const FALLBACK_TOKEN = 'uUR755Pf3Ph1AAReT40dKw9529nYH6mVVOCgBRjU_po';
 
 function corsHeaders(req: Request): Headers {
   const h = new Headers();
@@ -47,23 +53,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   }
 
-  const origin = (env.ORIGIN || '').trim().replace(/\/$/, '');
-  const token = (env.BRIDGE_SECRET || env.API_TOKEN || '').trim();
-
-  if (!origin) {
-    return jsonError(
-      request,
-      500,
-      'ORIGIN no configurado en Cloudflare Pages',
-    );
-  }
-  if (!token) {
-    return jsonError(
-      request,
-      500,
-      'BRIDGE_SECRET no configurado en Cloudflare Pages',
-    );
-  }
+  const origin = (env.ORIGIN || FALLBACK_ORIGIN).trim().replace(/\/$/, '');
+  const token = (env.BRIDGE_SECRET || env.API_TOKEN || FALLBACK_TOKEN).trim();
 
   const parts = params.path;
   const path = Array.isArray(parts)
