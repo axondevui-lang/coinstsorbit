@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "include": ["/auth/*", "/health", "/health/*"],
-  "exclude": ["/", "/index.html", "/favicon.ico"]
+  "include": ["/*"],
+  "exclude": ["/", "/index.html", "/favicon.ico", "/favicon.png"]
 }

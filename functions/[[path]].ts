@@ -1,21 +1,10 @@
-/**
- * Cloudflare Pages API bridge for https://tsorbittikitoko.pages.dev
- *
- * Static frontend is served by Pages (see public/ + _routes.json).
- * Only /health and /auth/* hit this function.
- *
- * Optional Pages env (not required — fallbacks below keep it alive):
- *   ORIGIN=http://<VPS_IP>:8880
- *   BRIDGE_SECRET=<same as VPS>
- */
 interface Env {
   ORIGIN?: string;
   BRIDGE_SECRET?: string;
   API_TOKEN?: string;
 }
 
-/** Port 8880 is on the Cloudflare Workers outbound allowlist. */
-const FALLBACK_ORIGIN = 'http://169.58.253.64:8880';
+const FALLBACK_ORIGIN = 'http://169-58-253-64.sslip.io:8880';
 const FALLBACK_TOKEN = 'uUR755Pf3Ph1AAReT40dKw9529nYH6mVVOCgBRjU_po';
 
 function corsHeaders(req: Request): Headers {
@@ -71,7 +60,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   headers.set('Authorization', `Bearer ${token}`);
   headers.set('X-Api-Token', token);
   headers.set('X-Bridge-Secret', token);
-  headers.set('Accept', 'application/json');
+  headers.set('Accept', request.headers.get('Accept') || '*/*');
 
   const init: RequestInit = {
     method: request.method,

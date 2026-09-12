@@ -18,9 +18,28 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Deploy Pages (direct upload)
+      - name: Deploy Pages with Functions
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=tsorbittikitoko --branch=main
+          command: pages deploy public --project-name=coinstsorbit --branch=main
+
+      - name: Point Pages ORIGIN at stable VPS hostname
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BRIDGE_SECRET: ${{ secrets.BRIDGE_SECRET }}
+          VPS_ORIGIN: ${{ secrets.VPS_ORIGIN }}
+        run: |
+          set -euo pipefail
+          ORIGIN="${VPS_ORIGIN:-http://169-58-253-64.sslip.io:8880}"
+          # Prefer hostname form (Workers cannot always fetch raw IPs)
+          case "$ORIGIN" in
+            http://169.58.253.64:8880|http://169.58.253.64:8787)
+              ORIGIN="http://169-58-253-64.sslip.io:8880"
+              ;;
+          esac
+          npx --yes wrangler@4 pages secret put BRIDGE_SECRET --project-name=coinstsorbit <<< "$BRIDGE_SECRET"
+          npx --yes wrangler@4 pages secret put ORIGIN --project-name=coinstsorbit <<< "$ORIGIN"
+          echo "ORIGIN configured: $ORIGIN"
