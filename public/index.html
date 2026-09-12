@@ -107,34 +107,6 @@
         vertical-align: middle;
       }
 
-      .sub {
-        margin-top: 1rem;
-        max-width: 28rem;
-        color: var(--muted);
-        font-size: 0.95rem;
-        line-height: 1.55;
-      }
-
-      .line {
-        margin-top: 2rem;
-        width: min(280px, 70vw);
-        height: 1px;
-        background: linear-gradient(
-          90deg,
-          transparent,
-          var(--blood),
-          transparent
-        );
-        opacity: 0.7;
-      }
-
-      .api {
-        margin-top: 1.25rem;
-        font-size: 0.8rem;
-        color: #6e5550;
-        letter-spacing: 0.08em;
-      }
-
       @keyframes heartbeat {
         0%,
         100% {
@@ -180,12 +152,6 @@
       <p class="status">
         <span class="pulse" aria-hidden="true"></span>Server running
       </p>
-      <p class="sub">
-        El puente está despierto. La app habla con este host; la IP del origen
-        vive solo en Cloudflare.
-      </p>
-      <div class="line" aria-hidden="true"></div>
-      <p class="api">API bridge · /health · /auth/login</p>
     </main>
   </body>
 </html>
